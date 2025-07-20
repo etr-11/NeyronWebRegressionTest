@@ -5,12 +5,13 @@ import logging
 from tqdm import tqdm
 
 class Web:
-    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 1, weight_decay: int=0.0001,  learning_data_size: int = 240000, learning_rate: int = 1e-4):
+    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 1, weight_decay: int=0.0001,  learning_data_size: int = 100_000, learning_rate: int = 0.03):
         self.dl_dw_l_arr = None
         self.disp = None
         self.curr_batch = None
         self.curr_sigma = None
         self.weight_decay = weight_decay
+        self.weights = []
         self.first_layer_size = first_layer_size
         self.count_of_hidden_layers = count_of_hidden_layers
         self.last_layer_size = last_layer_size
@@ -28,7 +29,7 @@ class Web:
         self.biases: list[np.ndarray] = []
         for i in range(1, count_of_hidden_layers + 1):
             r = (last_layer_size / first_layer_size) ** (1 / (count_of_hidden_layers + 1))
-            layer_size = int(first_layer_size * (r ** (i + 1)))
+            layer_size = int(first_layer_size * (r ** (i)))
             print(layer_size)
             self.layer_sizes.append(layer_size)
             self.biases.append(np.random.randn(layer_size, 1))
@@ -47,6 +48,9 @@ class Web:
         self.education_matrix = np.zeros((self.learning_data_size, self.first_layer_size, 1))
         self.education_matrix_answers = np.zeros((self.learning_data_size, self.last_layer_size), dtype=np.float64)
         loaded_data = open("edu_file.csv").readlines()
+
+        # np.random.shuffle(loaded_data)  перемешивание строк для избежания скрытой корреляции 
+
         for i in range(self.learning_data_size):
             example = loaded_data[i].strip().split(",")
             self.education_matrix[i] = np.array([float(x) for x in example[:self.first_layer_size]]).reshape(-1, 1)
@@ -64,21 +68,55 @@ class Web:
         self.y_std = y.std(axis=0, keepdims=True) + 1e-8
         self.education_matrix_answers = (y - self.y_mean) / self.y_std
 
+        #тестик на нормализацию
+        print("X mean after normalization:", self.education_matrix.reshape(self.learning_data_size, -1).mean(axis=0).round(3))
+        print("X std after normalization:", self.education_matrix.reshape(self.learning_data_size, -1).std(axis=0).round(3))
+        print("Y mean after normalization:", self.education_matrix_answers.mean(axis=0).round(3)) 
+        print("Y std after normalization:", self.education_matrix_answers.std(axis=0).round(3))
+
+        # тестик №2 на выбросы 
+        X_norm = self.education_matrix.reshape(self.learning_data_size, -1)
+        threshold = 3
+        num_outliers = np.sum(np.abs(X_norm) > threshold)
+        total_values = X_norm.size
+        print(f"Выбросов: {num_outliers} из {total_values} ({num_outliers / total_values * 100:.4f}%)")
+
+        # тестик 3 на размерность
+        assert self.education_matrix.shape == (self.learning_data_size, self.first_layer_size, 1), \
+        f"Expected education_matrix shape {(self.learning_data_size, self.first_layer_size, 1)}, got {self.education_matrix.shape}"
+        assert self.education_matrix_answers.shape == (self.learning_data_size, self.last_layer_size), \
+        f"Expected education_matrix_answers shape {(self.learning_data_size, self.last_layer_size)}, got {self.education_matrix_answers.shape}"
+        
+    def weight_recalculation(self, lr):
+        for layer in range(self.count_of_hidden_layers, -1, -1):
+            self.weights[layer] -= self.dl_dw_l_arr[layer] * lr + self.weight_decay * self.weights[layer] * lr
+            self.biases[layer] -= self.dl_db_l_arr[layer].T * lr
+
+
     def start_education(self):
         self.load_learning_data()
         self.init_weights()
 
         N = self.education_matrix.shape[0]
 
-        for epoch in range(1, 50):  # Количество эпох обучения
+        for epoch in range(1, 15):  # Количество эпох обучения
             idx = np.random.permutation(N)
+            epoch_loss = 0.0     # ← ДОБАВЬ: накопитель ошибки за эпоху
+            batch_count = 0
+            lr = self.learning_rate * (0.95 ** epoch)
             for i in tqdm(range(0, self.learning_data_size, self.batch_size), desc=f"epoch {epoch} Training progress"):
                 if (self.batch_size + i >= self.learning_data_size ):
                     continue
                 batch_idx = idx[i:i + self.batch_size]
                 self.forward_pass(batch_idx)
+                loss = np.mean((self.y_results - self.education_matrix_answers[batch_idx]) ** 2)
+                # print(f"Epoch {epoch}, batch {i}: Loss = {loss:.6f}")
+                epoch_loss += loss
+                batch_count += 1
                 self.back_propagation(batch_idx)
-                self.weight_recalculation()
+                self.weight_recalculation(lr=lr)
+            avg_loss = epoch_loss / batch_count
+            print(f"\nEpoch {epoch} | Avg loss: {avg_loss:.6f}\n")
 
 
     def init_weights(self):
@@ -143,23 +181,28 @@ class Web:
         self.dl_dw_l_arr.reverse()
         self.dl_db_l_arr.reverse()
         self.logger.info("Finished back propagation")
+        # for i, g in enumerate(self.dl_dw_l_arr):
+        #     print(f"grad[{i}] max: {np.max(np.abs(g)):.6f}, mean: {np.mean(np.abs(g)):.6f}")
 
 
-    def weight_recalculation(self):
-        for layer in range(self.count_of_hidden_layers, -1, -1):
-            self.weights[layer] -= (self.dl_dw_l_arr[layer]) * self.learning_rate + self.weight_decay * self.weights[layer] * self.learning_rate
+    # def weight_recalculation(self):
+    #     for layer in range(self.count_of_hidden_layers, -1, -1):
+    #         self.weights[layer] -= (self.dl_dw_l_arr[layer]) * self.learning_rate + self.weight_decay * self.weights[layer] * self.learning_rate
 
-            self.biases[layer] -= self.dl_db_l_arr[layer].T * self.learning_rate
-        self.logger.info("Finished weight recalculation")
+    #         self.biases[layer] -= self.dl_db_l_arr[layer].T * self.learning_rate
+    #     self.logger.info("Finished weight recalculation")
 
     def predict(self, X: np.ndarray, *, auto_batch=True, load_if_needed=False):
         """
         X  : np.ndarray  shape (N, first_layer_size)  or (first_layer_size,)
         Returns ndarray shape (N, last_layer_size)
         """
+        
+
         # — 0. если веса пусты — загружаем чек-пойнт
-        if load_if_needed and not self.weights:
-            self.load()
+        # if load_if_needed and not self.weights:
+        #     self.load()  
+        # --------------------------- где self.load()?
 
         # — 1. приведение формы
         if X.ndim == 1:
@@ -190,3 +233,4 @@ class Web:
         # Y_pred = self.denorm(Y_pred)
 
         return Y_pred.squeeze()                 # (N,) если k==1
+    
