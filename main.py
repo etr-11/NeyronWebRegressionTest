@@ -5,7 +5,6 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import numpy as np
-
 from Web import Web
 
 
@@ -33,12 +32,7 @@ def load_emnist_data(batch_size=64):
     np.savetxt(file_path, data, delimiter=',', fmt='%.10f')
     print(data.shape)
 
-# with open ("edu_file.csv") as F:
-#     for i in range (10):
-#         line = F.readline()
-#         print ("СТРОКА ВЫГЛЯДИТ ТАК:", line)
-
-loaded_data = open("edu_file.csv").readlines()
+loaded_data = open("edu_map_9.csv").readlines()
 print (len(loaded_data))
 
 if __name__ == "__main__":
@@ -47,6 +41,6 @@ if __name__ == "__main__":
     web = Web(config["first_layer_size"], config["count_of_hidden_layers"], config["last_layer_size"], config["batch_size"], config["weight_decay"])
     web.start_education()
     while True:
-        data = list(map(int, input("Введите точку x\n").split()))
+        data = list(map(float, input("Введите точку x\n").strip().split(",")))
         res = web.predict(np.array(data)) 
-        print("Результат:", " ".join(f"{v:.4f}" for v in np.atleast_1d(res)), "\n")
+        print("Результат:", " ".join(f"{v:.7f}" for v in np.atleast_1d(res)), "\n")

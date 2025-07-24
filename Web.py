@@ -5,7 +5,7 @@ import logging
 from tqdm import tqdm
 
 class Web:
-    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 1, weight_decay: int=0.0001,  learning_data_size: int = 100_000, learning_rate: int = 0.03):
+    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 1, weight_decay: int=0.0001,  learning_data_size: int = 1927, learning_rate: int = 0.04):
         self.dl_dw_l_arr = None
         self.disp = None
         self.curr_batch = None
@@ -22,11 +22,10 @@ class Web:
         self.logger.setLevel(logging.DEBUG)
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.DEBUG)
-        # self.logger.addHandler(console_handler)
-        #sdgjksbhgjisgnhas
         self.layer_sizes: list[int] = [self.first_layer_size]
         self.weights: list[np.ndarray] = []
         self.biases: list[np.ndarray] = []
+
         for i in range(1, count_of_hidden_layers + 1):
             r = (last_layer_size / first_layer_size) ** (1 / (count_of_hidden_layers + 1))
             layer_size = int(first_layer_size * (r ** (i)))
@@ -47,14 +46,20 @@ class Web:
     def load_learning_data(self):
         self.education_matrix = np.zeros((self.learning_data_size, self.first_layer_size, 1))
         self.education_matrix_answers = np.zeros((self.learning_data_size, self.last_layer_size), dtype=np.float64)
-        loaded_data = open("edu_file.csv").readlines()
+        loaded_data = open("edu_map_9.csv").readlines()
 
-        # np.random.shuffle(loaded_data)  перемешивание строк для избежания скрытой корреляции 
+        np.random.shuffle(loaded_data)  #перемешивание строк для избежания скрытой корреляции 
 
         for i in range(self.learning_data_size):
             example = loaded_data[i].strip().split(",")
+
+            if len(example) < self.first_layer_size + self.last_layer_size:
+                print(f"[WARNING] Строка {i} пропущена: недостаточно данных ({len(example)} вместо {self.first_layer_size + self.last_layer_size})")
+                continue
+
             self.education_matrix[i] = np.array([float(x) for x in example[:self.first_layer_size]]).reshape(-1, 1)
             self.education_matrix_answers[i] = np.array([float(x) for x in example[self.first_layer_size:]])
+
         self.logger.info("Loaded learning data")
 
         ## Далее нормализация данных
@@ -63,6 +68,7 @@ class Web:
         self.x_std = X.std(axis=0, keepdims=True) + 1e-8
         self.education_matrix = ((X - self.x_mean) / self.x_std).reshape(
             self.learning_data_size, self.first_layer_size, 1)
+            
         y = self.education_matrix_answers
         self.y_mean = y.mean(axis=0, keepdims=True)
         self.y_std = y.std(axis=0, keepdims=True) + 1e-8
@@ -99,11 +105,12 @@ class Web:
 
         N = self.education_matrix.shape[0]
 
-        for epoch in range(1, 15):  # Количество эпох обучения
+        for epoch in range(1, 150):  # Количество эпох обучения
             idx = np.random.permutation(N)
-            epoch_loss = 0.0     # ← ДОБАВЬ: накопитель ошибки за эпоху
+            epoch_loss = 0.0 
             batch_count = 0
             lr = self.learning_rate * (0.95 ** epoch)
+
             for i in tqdm(range(0, self.learning_data_size, self.batch_size), desc=f"epoch {epoch} Training progress"):
                 if (self.batch_size + i >= self.learning_data_size ):
                     continue
@@ -126,7 +133,7 @@ class Web:
         # Определяем все веса. Массив весов имеет следующий вид: self.weights[Номер слоя][Номер нейрона в слое][Номер нейрона в следующем слое]
 
     def activation_function(self, x):
-        alpha = 0.01  # Коэффициент наклона для отрицательной части
+        alpha = 0.005  # Коэффициент наклона для отрицательной части
         return np.where(x >= 0, x, alpha * x)  # Применяем ReLU поэлементно для матрицы
 
     def forward_pass(self, batch_idx):
@@ -184,13 +191,6 @@ class Web:
         # for i, g in enumerate(self.dl_dw_l_arr):
         #     print(f"grad[{i}] max: {np.max(np.abs(g)):.6f}, mean: {np.mean(np.abs(g)):.6f}")
 
-
-    # def weight_recalculation(self):
-    #     for layer in range(self.count_of_hidden_layers, -1, -1):
-    #         self.weights[layer] -= (self.dl_dw_l_arr[layer]) * self.learning_rate + self.weight_decay * self.weights[layer] * self.learning_rate
-
-    #         self.biases[layer] -= self.dl_db_l_arr[layer].T * self.learning_rate
-    #     self.logger.info("Finished weight recalculation")
 
     def predict(self, X: np.ndarray, *, auto_batch=True, load_if_needed=False):
         """
