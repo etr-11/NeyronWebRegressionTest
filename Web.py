@@ -5,7 +5,7 @@ import logging
 from tqdm import tqdm
 
 class Web:
-    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 256, weight_decay: int=1,  learning_data_size: int = 1927, learning_rate: int = 0.004):
+    def __init__(self, first_layer_size: int, count_of_hidden_layers: int, last_layer_size: int, batch_size: int = 1, weight_decay: int=0.0001,  learning_data_size: int = 1926, learning_rate: int = 0.04):
         self.dl_dw_l_arr = None
         self.disp = None
         self.curr_batch = None
@@ -105,11 +105,11 @@ class Web:
 
         N = self.education_matrix.shape[0]
 
-        for epoch in range(1, 1600):  # Количество эпох обучения
+        for epoch in range(1, 300):  # Количество эпох обучения
             idx = np.random.permutation(N)
             epoch_loss = 0.0 
             batch_count = 0
-            lr = self.learning_rate / (1 + 0.01 * epoch)
+            lr = self.learning_rate * (0.95 ** epoch)
 
 
             for i in tqdm(range(0, self.learning_data_size, self.batch_size), desc=f"epoch {epoch} Training progress"):
